@@ -33,9 +33,9 @@ def get_lca(n, lin_filter):
     
     nleaves = 0
     for n in CONTENT[n]:        
-        if lin_filter in n.named_lineage: 
+        if lin_filter in n.lineage: 
             nleaves += 1
-            lineages.update(n.named_lineage)
+            lineages.update(n.lineage)
 
     lca = [l for l, count in lineages.items() if count == nleaves]
     if not lca: 
@@ -50,7 +50,8 @@ def most_frequent(List):
 
 def load_node_scores(n):
     leaf_targets = [n.taxid for n in CONTENT[n] if TARGET_LCA in taxa[n]]
-    n.nspcs = len(set(leaf_targets))         
+    n.nspcs = len(set(leaf_targets))   
+    
     n.lca = get_lca(n, TARGET_LCA)
     
     dups_per_sp = Counter(leaf_targets)
@@ -88,6 +89,9 @@ def is_leaf_og(node):
 
 ncbi = NCBITaxa('/data/jhc/cold/eggnog6/build/00_level_clades/ref_trees_damian_taxonomy/etetoolkit/taxa.sqlite')
 t = PhyloTree(sys.argv[1])
+t.resolve_polytomy()
+if sys.argv[5] == "midpoint":
+    t.set_outgroup(t.get_midpoint_outgroup())
 
 t.set_species_naming_function(lambda x: x.split('.')[0])
 t.annotate_ncbi_taxa()
@@ -102,11 +106,12 @@ for n in CONTENT[t]:
 events = t.get_descendant_evol_events()
 
 # Which is the target level to create OGs? This is global variable used by several funcions
-TARGET_LCA = sys.argv[2]
+TARGET_LCA = int(sys.argv[2])
  
 for node in t.traverse("preorder"):
     if not node.is_leaf():
         node.name = id_generator()
+    
 
 with open('/home/plaza/projects/eggnog6/pfamA_families/eggnog6_pfamParse/domains_sorted.json') as d: 
     data = json.load(d) 
@@ -130,7 +135,8 @@ for ev in events:
 
 taxa = {}
 for leaf in t:
-    taxa[leaf] = set(leaf.named_lineage)
+    taxa[leaf] = set(leaf.lineage)
+
 
 
 # What is the LCA of the whole tree? (just for information)
@@ -147,27 +153,63 @@ print(SPTOTAL, len(taxa), e_tree_lca)
 # finds the nodes that can be collpased as OGs given the TARGET_LCA. 
 # The decision is made by the is_leaf_of() function, which calculates several scores per node
 scores = []
-og_doms = defaultdict(list)
+
+og_doms_final = defaultdict(list)
 
 for leaf in t.iter_leaves(is_leaf_fn=is_leaf_og):
     scores.append([leaf.score1, leaf.score2, len(CONTENT[leaf]), leaf.nspcs, leaf.lca, leaf])
     leaf.img_style['draw_descendants'] = False
-    leaf.img_style['size'] = leaf.nspcs
-
+    
+    og_doms_prefilter = defaultdict(list)
+    level_len = defaultdict(list)
     d_list = []
-    for l in CONTENT[leaf]:
-        d = data2[l.name]
-        d_list.append(d)
+    
+    
+        
+
+    if leaf.name in sos_dict.keys():
+        so_node = float(sos_dict[leaf.name])
+    else:
+        so_node = 0.0
+
+    if so_node <= 0.3:
+        for l in CONTENT[leaf]:
+            sp_ = l.name.split('.')[0]
+            if TARGET_LCA in ncbi.get_lineage(sp_):
+                og_doms_prefilter[leaf.name].append(l.name)
+                level_len[leaf.name].append(l.name)
+        
+    elif so_node >= 0.3 and leaf.lca != 'Unk':
+        leaf.img_style["bgcolor"] = "Salmon"
+        for l in CONTENT[leaf]:
+            sp_ = l.name.split('.')[0]
+            if TARGET_LCA in ncbi.get_lineage(sp_):
+                level_len[leaf.name].append(l.name)
+            
+                
+
+    for node, leafs in og_doms_prefilter.items():
+        for l in leafs:
+            d = data2[l]
+            d_list.append(d)
 
     count_doms = (Counter(d_list))
     common = count_doms.most_common(1)
     
-    for l in CONTENT[leaf]:
-        if common[0][0] == data2[l.name]:
-            og_doms[leaf.name].append(l.name)
+    if len(d_list) != 0:
+        for node, leafs in og_doms_prefilter.items():
+            for l in leafs:
+                if common[0][0] == data2[l]:
+                    og_doms_final[leaf.name].append(l)
+            if len(og_doms_final[leaf.name]) <= 3:
+                leaf.img_style["bgcolor"] = "Orange"
+            else:
+                leaf.img_style["bgcolor"] = "LightGreen"
 
+          
 
-    leaf.add_face(TextFace(("LCA:%s; DOMS:%s; LEN:%s;" % (leaf.lca, common, len(CONTENT[leaf]), ))), column=0, position="branch-right")
+    leaf.img_style['size'] = len(og_doms_final[leaf.name])
+    leaf.add_face(TextFace(("LCA:%s; DOMS:%s; LEN:%s; LEVEL_LEN:%s; TOTAL_LEN:%s; SO:%s" % (leaf.lca, common, len(og_doms_final[leaf.name]), len(level_len[leaf.name]),len(CONTENT[leaf]),so_node ))), column=0, position="branch-right")
 
     
 scores.sort(reverse=True, key=lambda x: x[:-1])
@@ -179,6 +221,7 @@ for s in scores[:10]:
 def layout(node):
     if not node.is_leaf():
         node.add_face(TextFace(node.name), column=0, position = "branch-right")
+        node.add_face(TextFace(sos_dict[node.name]), column=0, position = "branch-right")
     
 
     if getattr(node, 'evoltype', None) == 'S':
@@ -196,7 +239,7 @@ ts.show_leaf_name = False
 name_tree = os.path.basename(sys.argv[1])
 path_out = sys.argv[4]  
 
-outfile =path_out+name_tree+'_'+TARGET_LCA+'_'+'doms'+'.pdf'
+outfile =path_out+name_tree+'_'+str(TARGET_LCA)+'_'+'doms_9'+'.pdf'
 print(len(t))
 t.render( outfile, w=350, units="mm", tree_style=ts)
 
@@ -207,9 +250,9 @@ for n, (name,seq,_) in enumerate(seqs):
     seqs_dict[name] = seq
 
 seqs_in_og = []
-for name_node,seqs in og_doms.items():
+for name_node,seqs in og_doms_final.items():
     if len(seqs) >3:
-        out_name = name_node+'_'+name_tree+'_'+TARGET_LCA
+        out_name = name_node+'_'+name_tree+'_'+str(TARGET_LCA)
         with open(path_out+out_name+'.faa', 'a') as f_out:
             for s in seqs:
                 seqs_in_og.append(s)
@@ -219,8 +262,10 @@ for name_node,seqs in og_doms.items():
 with open(path_out+'not_og-'+name_tree+'.faa', 'a') as f_out:
     for s in total_seqs:
         if s not in seqs_in_og:
-            aa = seqs_dict[s]
-            f_out.write('>'+s+'\n'+aa+'\n')
+            sp_ = s.split('.')[0]
+            if TARGET_LCA in ncbi.get_lineage(sp_):
+                aa = seqs_dict[s]
+                f_out.write('>'+s+'\n'+aa+'\n')
 
 
 
