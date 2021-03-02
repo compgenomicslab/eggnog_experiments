@@ -32,7 +32,8 @@ def get_lca(n, lin_filter):
     lineages = OrderedCounter()
     
     nleaves = 0
-    for n in CONTENT[n]:        
+    #for n in CONTENT[n]:
+    for n in n.get_leaves():        
         if lin_filter in n.lineage: 
             nleaves += 1
             lineages.update(n.lineage)
@@ -66,26 +67,123 @@ def is_leaf_og(node):
     # and calculates Last Common Ancestor. Other leaves not matching TARGET_LCA
     # are ignored for score computation. This allows, for instance, finding euk-OGs 
     # in a tree where there are also bacteria
-    if not hasattr(node, 'lca'):
-        load_node_scores(node)
+    
+    node_ =  get_taxo_groups2(node)
+
+    if not hasattr(node_, 'lca'):
+        load_node_scores(node_)
     
         
-    if node.is_leaf():
+    if node_.is_leaf():
         # If we reached a leave, just return it as an end point. We cannot do anything        
         return True
     else:     
         # If the node is internal, let's evaluate if it could be considered an OG,
-        # or should be split                        
-        ch1 = node.children[0]
-        ch2 = node.children[1]
+        # or should be split
+        
+        ch1 = node_.children[0]
+        ch2 = node_.children[1]
         load_node_scores(ch1)
         load_node_scores(ch2)
                 
         if TARGET_LCA not in [ch1.lca, ch2.lca]: 
             return True
-        else:
+        else:           
             return False
 
+
+# def get_taxo_groups(node):
+
+    # count_lin = defaultdict(lambda: defaultdict(int))
+    # count_lin_mem = defaultdict(lambda: defaultdict(list))
+    # count_lin_perc = defaultdict(lambda: defaultdict(float))
+
+    # parent_node = node.up
+    # lca_parent_node = get_lca(parent_node, TARGET_LCA)
+    # lin_parent_node = ncbi.get_lineage(lca_parent_node)
+    # filter_content = defaultdict(list)
+
+    # for l in CONTENT[parent_node]:
+        # if TARGET_LCA in l.lineage:
+            # for index, (term) in enumerate(l.lineage):
+                # count_lin[index][term] += 1
+                # count_lin_mem[index][term].append(l.name)
+                # filter_content[parent_node.name].append(l.name)
+    
+    # for index, term in count_lin.items():
+        # if index == len(lin_parent_node):
+            # for taxid, num in term.items():
+                # leng = len(filter_content[parent_node.name])
+                # p = float(num/leng)
+                # p_taxid = float(num/counter_taxono[taxid])
+                # print(p_taxid, counter_taxono[taxid], num )
+                # count_lin_perc[index][taxid] = p
+                # if p <= 0.001 and p_taxid < 0.01 :
+                    # print(leaf.name, p, taxid)
+                    # return False
+
+    # return True
+
+def get_taxo_groups2(node):
+    #count_lin: dict para contar por cada nivel de profundidad para cada taxid el nº de seqs (ej, para Bilateria que seria nivel 6, cuantas seqs hay en ese nodo {6:{33213:x}})
+    count_lin = defaultdict(lambda: defaultdict(int))
+    #count_lin_mem: dict para guardar por cada nivel de profundidad para cada taxid los seqs.name 
+    count_lin_mem = defaultdict(lambda: defaultdict(list))
+    
+    #count_lin_perc = defaultdict(lambda: defaultdict(float))
+
+    lca_node = get_lca(node, TARGET_LCA)
+    if lca_node != 'Unk':
+        lin_node = ncbi.get_lineage(lca_node)
+    else:
+        lin_node = ['Unk']
+    
+    #para el nodo guarda todas las seqs, independientemente del linaje que tengan
+    filter_content = defaultdict(list)
+
+    for l in CONTENT[node]:
+        if TARGET_LCA in l.lineage:
+            for index, (term) in enumerate(l.lineage):
+                count_lin[index][term] += 1
+                count_lin_mem[index][term].append(l.name)
+                filter_content[node.name].append(l.name)
+    
+    #para nada nivel de profundidad, para todos los grupos(taxid) en ese nivel
+    for index, term in count_lin.items():
+        
+        #miro solo los taxids que estan un nivel por debajo del lca del nodo, es decir si el lca del nodo es bilateria solo miro protostomos, deuterostomos
+        if index == len(lin_node):
+            
+            #para cada taxid del nivel posterior al lca del nodo calculo el porcentaje de seqs que hay de ese taxid en ese nodo
+            for taxid, num in term.items():
+                
+                #calculo el porcentaje de seqs que hay de ese taxid (num) en ese nodo (leng)
+                leng = len(filter_content[node.name])
+                p = float(num/leng)
+                
+                #calculo el porcenje de seqs que hay de ese taxid en comparacion con todas las seqs que hay de ese taxid en todo el grupo 
+                #no es lo mismo 1 protostomo si en total hay 3, que 1 protostomo si en total hay 1000
+                p_taxid = float(num/counter_taxono[taxid])
+                
+                #count_lin_perc[index][taxid] = p
+
+                #elimino las seqs que pertenezcan a taxid muy muy muy minoritarios
+                if p <= 0.001 and p_taxid < 0.01 :
+                    for le in count_lin_mem[index][taxid]:
+                        det = node.search_nodes(name=le)
+                        for d in det:
+                            d.detach()
+
+
+    remain_leaves =  []
+    for l in node.get_leaves():
+        remain_leaves.append(l.name)
+    node.prune(remain_leaves)
+    
+    node_clean = node
+    return node_clean
+
+    
 
 ncbi = NCBITaxa('/data/jhc/cold/eggnog6/build/00_level_clades/ref_trees_damian_taxonomy/etetoolkit/taxa.sqlite')
 t = PhyloTree(sys.argv[1])
@@ -107,10 +205,17 @@ events = t.get_descendant_evol_events()
 
 # Which is the target level to create OGs? This is global variable used by several funcions
 TARGET_LCA = int(sys.argv[2])
+lin_target = ncbi.get_lineage(TARGET_LCA)
+print (TARGET_LCA)
+t2n=ncbi.get_taxid_translator([TARGET_LCA])
+print(t2n[TARGET_LCA])
+print(lin_target)
  
+        
 for node in t.traverse("preorder"):
     if not node.is_leaf():
         node.name = id_generator()
+
     
 
 with open('/home/plaza/projects/eggnog6/pfamA_families/eggnog6_pfamParse/domains_sorted.json') as d: 
@@ -121,6 +226,11 @@ for seq, dom in data.items():
     dom = dom.split(',')
     d = set(dom)
     data2[seq] = str(list(d))
+
+data_names = {}
+with open(sys.argv[6]) as names:
+    data_names = json.load(names)
+
      
 
 sos_dict = {}
@@ -134,8 +244,14 @@ for ev in events:
 
 
 taxa = {}
+counter_taxono = defaultdict(int)
 for leaf in t:
     taxa[leaf] = set(leaf.lineage)
+    for taxid in leaf.lineage:
+        counter_taxono[taxid] +=1
+
+
+
 
 
 
@@ -155,63 +271,91 @@ print(SPTOTAL, len(taxa), e_tree_lca)
 scores = []
 
 og_doms_final = defaultdict(list)
+count_tax_levels = defaultdict(dict)
+
+
 
 for leaf in t.iter_leaves(is_leaf_fn=is_leaf_og):
+
     scores.append([leaf.score1, leaf.score2, len(CONTENT[leaf]), leaf.nspcs, leaf.lca, leaf])
     leaf.img_style['draw_descendants'] = False
-    
     og_doms_prefilter = defaultdict(list)
     level_len = defaultdict(list)
     d_list = []
-    
-    
-        
+
+    if leaf.lca != 'Unk':
+        tax2name = ncbi.get_taxid_translator([leaf.lca])
+        name_lca = tax2name[leaf.lca]
+    else:
+        name_lca = leaf.lca
 
     if leaf.name in sos_dict.keys():
         so_node = float(sos_dict[leaf.name])
     else:
         so_node = 0.0
 
-    if so_node <= 0.3:
+    if leaf.up.name in sos_dict.keys():
+        so_parent = float(sos_dict[leaf.up.name])
+    else:
+        so_parent = 0.0
+
+    sp_nodes = []
+    if so_parent > 0.3:
         for l in CONTENT[leaf]:
             sp_ = l.name.split('.')[0]
-            if TARGET_LCA in ncbi.get_lineage(sp_):
+            if TARGET_LCA in ncbi.get_lineage(sp_) :
                 og_doms_prefilter[leaf.name].append(l.name)
                 level_len[leaf.name].append(l.name)
-        
-    elif so_node >= 0.3 and leaf.lca != 'Unk':
+                sp_nodes.append(sp_)
+    else:
         leaf.img_style["bgcolor"] = "Salmon"
-        for l in CONTENT[leaf]:
-            sp_ = l.name.split('.')[0]
-            if TARGET_LCA in ncbi.get_lineage(sp_):
-                level_len[leaf.name].append(l.name)
-            
-                
-
+    
+    # if len(sp_nodes) >0:
+        # top = ncbi.get_topology(sp_nodes)
+        #print(top)
+    #-------------------------------------------------------
+    # if so_node <= 0.3:
+        # for l in CONTENT[leaf]:
+            # sp_ = l.name.split('.')[0]
+            # if TARGET_LCA in ncbi.get_lineage(sp_):
+                # og_doms_prefilter[leaf.name].append(l.name)
+                # level_len[leaf.name].append(l.name)
+    # elif so_node >= 0.3 and leaf.lca != 'Unk':
+        # leaf.img_style["bgcolor"] = "Salmon"
+        # for l in CONTENT[leaf]:
+            # sp_ = l.name.split('.')[0]
+            # if TARGET_LCA in ncbi.get_lineage(sp_):
+                # level_len[leaf.name].append(l.name)
+    #---------------------------------------------------------        
     for node, leafs in og_doms_prefilter.items():
         for l in leafs:
             d = data2[l]
             d_list.append(d)
-
     count_doms = (Counter(d_list))
     common = count_doms.most_common(1)
+    gnamesl = list()
     
     if len(d_list) != 0:
         for node, leafs in og_doms_prefilter.items():
             for l in leafs:
                 if common[0][0] == data2[l]:
                     og_doms_final[leaf.name].append(l)
-            if len(og_doms_final[leaf.name]) <= 3:
-                leaf.img_style["bgcolor"] = "Orange"
-            else:
+                    if l in data_names.keys():
+                        gnamesl.append(data_names[l])
+            if len(og_doms_final[leaf.name]) > 3:
                 leaf.img_style["bgcolor"] = "LightGreen"
+            else:
+                leaf.img_style["bgcolor"] = "Orange"
+            
 
-          
+    count_names = Counter(gnamesl)
+    common_name = count_names.most_common(1)
 
     leaf.img_style['size'] = len(og_doms_final[leaf.name])
-    leaf.add_face(TextFace(("LCA:%s; DOMS:%s; LEN:%s; LEVEL_LEN:%s; TOTAL_LEN:%s; SO:%s" % (leaf.lca, common, len(og_doms_final[leaf.name]), len(level_len[leaf.name]),len(CONTENT[leaf]),so_node ))), column=0, position="branch-right")
+    leaf.add_face(TextFace(("LCA:%s; DOMS:%s; GENE:%s ;LEN:%s; LEVEL_LEN:%s; TOTAL_LEN:%s" % (name_lca, common, common_name, len(og_doms_final[leaf.name]), len(level_len[leaf.name]),len(CONTENT[leaf])))), column=0, position="branch-right")
 
-    
+
+
 scores.sort(reverse=True, key=lambda x: x[:-1])
 covered_seqs = 0
 for s in scores[:10]:    
@@ -222,6 +366,14 @@ def layout(node):
     if not node.is_leaf():
         node.add_face(TextFace(node.name), column=0, position = "branch-right")
         node.add_face(TextFace(sos_dict[node.name]), column=0, position = "branch-right")
+
+        sp_l = []
+        for l in CONTENT[node]:
+            sp_l.append(l.name.split('.')[0])
+        t_anc = ncbi.get_topology(sp_l)
+        name_anc = t_anc.sci_name
+
+        node.add_face(TextFace(name_anc), column=0, position = "branch-right")   
     
 
     if getattr(node, 'evoltype', None) == 'S':
@@ -239,7 +391,7 @@ ts.show_leaf_name = False
 name_tree = os.path.basename(sys.argv[1])
 path_out = sys.argv[4]  
 
-outfile =path_out+name_tree+'_'+str(TARGET_LCA)+'_'+'doms_9'+'.pdf'
+outfile =path_out+name_tree+'_'+str(TARGET_LCA)+'_'+'doms_14'+'.pdf'
 print(len(t))
 t.render( outfile, w=350, units="mm", tree_style=ts)
 
@@ -250,22 +402,19 @@ for n, (name,seq,_) in enumerate(seqs):
     seqs_dict[name] = seq
 
 seqs_in_og = []
-for name_node,seqs in og_doms_final.items():
-    if len(seqs) >3:
-        out_name = name_node+'_'+name_tree+'_'+str(TARGET_LCA)
-        with open(path_out+out_name+'.faa', 'a') as f_out:
-            for s in seqs:
-                seqs_in_og.append(s)
-                aa = seqs_dict[s]
-                f_out.write('>'+s+'\n'+aa+'\n')
+# for name_node,seqs in og_doms_final.items():
+    # if len(seqs) >3:
+        # out_name = name_node+'_'+name_tree+'_'+str(TARGET_LCA)
+        # with open(path_out+out_name+'.faa', 'a') as f_out:
+            # for s in seqs:
+                # seqs_in_og.append(s)
+                # aa = seqs_dict[s]
+                # f_out.write('>'+s+'\n'+aa+'\n')
 
-with open(path_out+'not_og-'+name_tree+'.faa', 'a') as f_out:
-    for s in total_seqs:
-        if s not in seqs_in_og:
-            sp_ = s.split('.')[0]
-            if TARGET_LCA in ncbi.get_lineage(sp_):
-                aa = seqs_dict[s]
-                f_out.write('>'+s+'\n'+aa+'\n')
-
-
-
+# with open(path_out+'not_og-'+name_tree+'.faa', 'a') as f_out:
+    # for s in total_seqs:
+        # if s not in seqs_in_og:
+            # sp_ = s.split('.')[0]
+            # if TARGET_LCA in ncbi.get_lineage(sp_):
+                # aa = seqs_dict[s]
+                # f_out.write('>'+s+'\n'+aa+'\n')
