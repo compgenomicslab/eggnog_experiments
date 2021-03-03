@@ -5,6 +5,8 @@ A simple program to find main OG groups out of a tree
 Example usage: 
 
 ```
-python find_tree_groups.py example_trees/Laminin_G_1.faa.nw.rooted Opisthokonta
+QT_QPA_PLATFORM=offscreen xvfb-run  python3.6 find_groups_get_seqs.py example_trees/P53.faa_midpooint.nw 33154 example_trees/P53.faa ./ midpoint
+
 ```
+
 
