@@ -20,7 +20,7 @@ import pickle
 
 start_time = time.time()
 
-ncbi = NCBITaxa('/home/plaza/projects/eggnog6/pfamA_families/eggnog_experiments/data/taxa.sqlite')
+ncbi = NCBITaxa('/data/jhc/cold/eggnog6/build/00_level_clades/ref_trees_damian_taxonomy/etetoolkit/taxa.sqlite')
 
 class OrderedCounter(Counter, OrderedDict):
      'Counter that remembers the order elements are first seen'
@@ -220,7 +220,7 @@ def proces_node(n):
 
 print('-load taxonomy')
 levels_eggnog = {}
-with open('/home/plaza/projects/eggnog6/pfamA_families/eggnog_experiments/data/levels2numSp_2.json') as levels:
+with open('/home/plaza/projects/eggnog6/pfamA_families/eggnog_experiments/data/levels2numSp.json') as levels:
     levels_eggnog = json.load(levels)
 
 
