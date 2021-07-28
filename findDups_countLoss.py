@@ -165,16 +165,16 @@ def proces_node(n):
     sp_per_level = defaultdict(set)
 
     leaves = CONTENT[n]
-    leaves_names  = []
+    #leaves_names  = []
     for l in leaves:
-        leaves_names.append(l.name)
+        #leaves_names.append(l.name)
         #las sp solo las tengo en cuenta la primera vez que aparecen (me da igual que haya varias seqs q la misma sp)
         if l.taxid not in sp_in_node: #and l.taxid not in n.sp_out_up:
             sp_in_node.add(l.taxid)
             for index, tax in enumerate(l.lineage):
                 count_lin[index][tax] += 1
                 count_lin_mem[index][tax].append(l.name)
-                sp_per_level[tax].add(l.taxid)
+                sp_per_level[tax].add(str(l.taxid))
 
     sp2remove = set()
 
@@ -199,18 +199,19 @@ def proces_node(n):
                 per_Node = num / len(sp_in_node)
 
                 #% linaje  el arbol
-                per_Tree = num / global_linages[level][tax]
+                #per_Tree = num / global_linages[level][tax]
                 per_Tree_total = num /SPTOTAL
                 
                 #% linaje en eggnog
                 per_Egg = num / levels_eggnog[str(tax)]
-                per_Egg_total = levels_eggnog[str(tax)] / len(reftree)
+                #per_Egg_total = levels_eggnog[str(tax)] / len(reftree)
                 
                 
                 if per_Egg <0.05:
                     if per_Node < 0.01 and per_Tree_total< 0.01:
-                        for seq in count_lin_mem[level][tax]:
-                            sp2remove.add(str(seq.split('.')[0]))
+                        sp2remove.update(sp_per_level[tax])
+                        # for seq in count_lin_mem[level][tax]:
+                            # sp2remove.add(str(seq.split('.')[0]))
                            
     
     return sp2remove            
