@@ -133,6 +133,7 @@ def count_losses(expected_sp, found_sp):
     if len(expected_sp) == 1: 
         return 0
     root = reftree.get_common_ancestor(expected_sp)
+    
     losses = 0
     n2losses = {}
     for post, node in reftree.iter_prepostorder():
@@ -146,7 +147,7 @@ def count_losses(expected_sp, found_sp):
                     n2losses[node] = 0
     miss_sp = set()
     for node in root.traverse(is_leaf_fn=is_leaf_2): 
-        if not (refn2sp[node] & found_sp):
+        if not (refn2sp[node] & found_sp) and (refn2sp[node] & expected_sp):
             losses += 1
     return losses
 
@@ -166,6 +167,7 @@ def proces_node(n):
 
     leaves = CONTENT[n]
     #leaves_names  = []
+    
     for l in leaves:
         #leaves_names.append(l.name)
         #las sp solo las tengo en cuenta la primera vez que aparecen (me da igual que haya varias seqs q la misma sp)
@@ -175,7 +177,7 @@ def proces_node(n):
                 count_lin[index][tax] += 1
                 count_lin_mem[index][tax].append(l.name)
                 sp_per_level[tax].add(str(l.taxid))
-
+                
     sp2remove = set()
 
     if n.up and properties[n.up.name] and properties[n.up.name]['sp_out']:
@@ -301,6 +303,7 @@ for n in t.traverse("preorder"):
 # Let's cache the list of leaves under each internal node. 
 # This is a global variable.
 CONTENT = t.get_cached_content()
+node2labels = t.get_cached_content(store_attr="name")
 
 for n in t.traverse("preorder"):
     if n.is_leaf():
@@ -315,9 +318,10 @@ for n in t.traverse("preorder"):
         
 
         if n.is_root():
-            all_mems = []
-            for l in n.get_leaves():
-                all_mems.append(l.name)
+            all_mems = list(node2labels[n])
+            # all_mems = []
+            # for l in n.get_leaves():
+                # all_mems.append(l.name)
 
             properties[n.name]['is_root'] = 'True'
             properties[n.name]['all_mems'] = all_mems
@@ -614,6 +618,8 @@ for name_og, info in og_dict.items():
     og_dict[name_og]['anc_og'] = []
     node_intersection = []
     max_dist = t.get_distance(t,name_og, topology_only=True)
+    og_dict[name_og]['dist'] = max_dist
+
     #save all og with shared members
     for n, i in og_dict.items():
         og2compare = set(i['mems'])
@@ -631,12 +637,14 @@ for name_og, info in og_dict.items():
     if len(sort_dups) > 0:
         
         for og_anc, dist in sort_dups.items():
-            lca = properties[og_anc]['lca_node']
+            #lca = properties[og_anc]['lca_node']
+            lca = og_dict[og_anc]['lca']
             prev_og[og_anc]['dist'] = dist
             prev_og[og_anc]['lca'] = lca
+
         og_dict[name_og]['anc_og'] = prev_og
-    else:
         
+    else:
         root_node = t.get_tree_root().name
         root_lca = properties[root_node]['lca_node']
         prev_og[root_node]['dist'] = 0.0
@@ -666,13 +674,13 @@ with open(not_og_fasta, 'w') as  f_out:
         aa = fasta.get_seq(name_seq)
         f_out.write('>'+name_seq+'\n'+aa+'\n')
 
-for name_og, info in og_dict.items():
-    lca = str(info['lca'])
-    with open(path_out+name_og+'_'+lca+'.faa', 'w') as f_out:
+# for name_og, info in og_dict.items():
+    # lca = str(info['lca'])
+    # with open(path_out+name_og+'_'+lca+'.faa', 'w') as f_out:
         
-        for m in info["mems"]:
-            aa = fasta.get_seq(m)
-            f_out.write('>'+m+'\n'+aa+'\n')
+        # for m in info["mems"]:
+            # aa = fasta.get_seq(m)
+            # f_out.write('>'+m+'\n'+aa+'\n')
 
 
 post_tree = path_out+'post_'+name_fam+'.nw'
